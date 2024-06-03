@@ -34,8 +34,9 @@ def main_menu(call_or_message):
     manage_btn = types.InlineKeyboardButton("Управление", callback_data='manage')
     read_btn = types.InlineKeyboardButton("Просмотр", callback_data='read')
     info_btn = types.InlineKeyboardButton("Информация", callback_data='info')
+    users_btn = types.InlineKeyboardButton("Пользователи", callback_data='users')
     markup.row(manage_btn, read_btn)
-    markup.row(info_btn)
+    markup.row(users_btn, info_btn)
 
     if isinstance(call_or_message, types.CallbackQuery):
         bot.send_message(call_or_message.message.chat.id, "Это главное меню склада. Выберите желаемое действие.",
@@ -388,6 +389,62 @@ def info(call):
                           "Затем эта информация появится в базе.",
                           call.message.chat.id, call.message.message_id,
                           reply_markup=markup)
+
+
+@bot.callback_query_handler(lambda call: call.data == 'users')
+def users(call):
+    query = "SELECT username, date_joined FROM tg_users"
+    paginate_users(call, query)
+
+def paginate_users(call, query):
+    items_per_page = 10
+    data_parts = call.data.split(':')
+    current_page = int(data_parts[1]) if len(data_parts) > 1 else 1
+
+    config = load_config()
+    connection = psycopg2.connect(**config)
+    cursor = connection.cursor()
+
+    cursor.execute(query)
+    data = cursor.fetchall()
+
+    connection.commit()
+    cursor.close()
+    connection.close()
+
+    if data:
+        total_pages = math.ceil(len(data) / items_per_page)
+        start_index = (current_page - 1) * items_per_page
+        end_index = min(start_index + items_per_page, len(data))
+
+        message_text = "Данные о пользователях:\n\n"
+        for row in data[start_index:end_index]:
+            username, date_joined = row
+            message_text += f"Имя пользователя: {username}, Дата присоединения: {date_joined}\n\n"
+
+        markup = types.InlineKeyboardMarkup()
+        row_buttons = []
+        if current_page > 1:
+            prev_button = types.InlineKeyboardButton("<<<", callback_data=f'users:{current_page - 1}')
+            row_buttons.append(prev_button)
+        if current_page < total_pages:
+            next_button = types.InlineKeyboardButton(">>>", callback_data=f'users:{current_page + 1}')
+            row_buttons.append(next_button)
+        markup.row(*row_buttons)
+
+        main_menu_btn = types.InlineKeyboardButton("В меню", callback_data='main_menu')
+        markup.row(main_menu_btn)
+
+        bot.edit_message_text(chat_id=call.message.chat.id,
+                              message_id=call.message.message_id,
+                              text=message_text,
+                              reply_markup=markup)
+    else:
+        bot.send_message(call.message.chat.id, "В базе данных нет пользователей.")
+
+
+
+
 
 
 if __name__ == '__main__':
